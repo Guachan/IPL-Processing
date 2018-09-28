@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ---
 title: "IPL Data LowpHOX-2"
 author: "Sebastian Cantarero"
@@ -6,273 +5,21 @@ date: "8/13/2018"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-library(plyr)
-library(tidyverse)
-library(ggplot2)
-library(latex2exp)
-library(readxl)
-
+```{r, eval=FALSE}
+install.packages("here")
 ```
 
-
-```{r}
-## Testing out different methods for importing data
-##import csv files from HPLC computer (Quantitation reports) from working directory
-## Can apply whatever filename/dataframe names you want here
-OG22_T5_250_0_3_SC_2 <- read_csv("C:/Users/canta/IPL-Processing/Data/OG22_T5-250-0-3_SC_2.csv")
-OG23_T5_60_0_3_SC_2 <- read_csv("C:/Users/canta/IPL-Processing/Data/OG23_T5-60-0-3_SC_2.csv")
-OG24_T5_45_0_3_SC_2 <- read_csv("C:/Users/canta/IPL-Processing/Data/OG24_T5-45-0-3_SC_2.csv")
-OG31_T3_55_0_3_SC_2 <- read_csv("C:/Users/canta/IPL-Processing/Data/OG31_T3-55-0-3_SC_2.csv")
-OG32_T3_25_0_3_SC_2 <- read_csv("C:/Users/canta/IPL-Processing/Data/OG32_T3-25-0-3_SC_2.csv")
-OG33_T3_9_0_3_SC_2 <- read_csv("C:/Users/canta/IPL-Processing/Data/OG33_T3-9-0-3_SC_2.csv")
-OG34_T5_35_0_3_SC_2 <- read_csv("C:/Users/canta/IPL-Processing/Data/OG34_T5-35-0-3_SC_2.csv")
-OG39_T5_28_0_3_SC_2 <- read_csv("C:/Users/canta/IPL-Processing/Data/OG39_T5-28-0-3_SC_2.csv")
-QOG30_T3_250_0_3_SC_2 <- read_csv("C:/Users/canta/IPL-Processing/Data/QOG30_T3-250-0-3_SC_2.csv")
-QOG37_T3_14_0_3_SC_2 <- read_csv("C:/Users/canta/IPL-Processing/Data/QOG37_T3-14-0-3_SC_2.csv")
-
-## Create dataframe of all peak areas according to station and depth.
-
-t5_250_2 <- data.frame(OG22_T5_250_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T5',
-         Depth = 250) %>% 
-  filter(!grepl('N/F', Response)) ##Removes mols with no detection
-  
-
-t5_60_2 <- data.frame(OG23_T5_60_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T5',
-         Depth = 60) %>% 
-  filter(!grepl('N/F', Response))
-
-t3_250_2 <- data.frame(QOG30_T3_250_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T3',
-         Depth = 250) %>% 
-  filter(!grepl('N/F', Response))
-
-t5_45_2 <- data.frame(OG24_T5_45_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T5',
-         Depth = 45) %>% 
-  filter(!grepl('N/F', Response))
-
-t3_55_2 <- data.frame(OG31_T3_55_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T3',
-         Depth = 55) %>% 
-  filter(!grepl('N/F', Response))
-
-t3_9_2 <- data.frame(OG33_T3_9_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T3',
-         Depth = 9) %>% 
-  filter(!grepl('N/F', Response))
-
-t3_14_2 <- data.frame(QOG37_T3_14_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T3',
-         Depth = 14) %>% 
-  filter(!grepl('N/F', Response))
-
-t3_25_2 <- data.frame(OG32_T3_25_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T3',
-         Depth = 25) %>% 
-  filter(!grepl('N/F', Response))
-
-t5_35_2 <- data.frame(OG34_T5_35_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T5',
-         Depth = 35) %>% 
-  filter(!grepl('N/F', Response))
-
-t5_28_2 <- data.frame(OG39_T5_28_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T5',
-         Depth = 28) %>% 
-  filter(!grepl('N/F', Response))
-
-data <- bind_rows(t5_28_2, t5_35_2, t3_25_2, t3_14_2, t3_9_2, t3_55_2, t5_45_2, t3_250_2, t5_60_2, t5_250_2) %>% 
-  filter(!grepl('Flag', Response)) %>% 
-  arrange(desc(Compound)) %>% na.omit() %>% unique() ##Removes duplicates and na values
-  
-
-##write.csv(data,"Uncalib2_2.csv")
-```
-
-```{r}
-## Apply calibration -- These calibrations may differ from run to run so it's best to use from the day of your run or the nearest date available. Also the format depending on which standard mix you ran. We could make several of these for different standard mixes.
-
-## I found it easiest to replace all the Std Area and Std Amounts in the spreadsheet with Std_Area and Std_Amounts in excel before importing.
-
-ARCHAEOL_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1ARCHAEOL", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'ARCHAEOL'
-    )
-
-MGDAG_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1MGDG", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'MGDAG'
-    )
-
-Gly_Cer_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet11-GLC-CER", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'Gly-Cer'
-    )
-
-DGTS_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1DGTS", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'DGTS'
-    )
-
-C16PA_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C16PA", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PA'
-    )
-
-C16PDME_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C16PDME", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PDME'
-    )
-
-C16PME_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C16PME", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PME'
-    )
-
-C16PE_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C16-PE", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PE'
-    )
-
-C16PG_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C16-PG", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PG'
-    )
-
-SQDAG_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1SQ-DAG", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'SQDAG'
-    )
-
-PC_ARCHAEOL_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1PC-ARCHAEOL", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PC-ARCHAEOL'
-    )
-
-PE_ARCHAEOL_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1PE-AR", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PE-ARCHAEOL'
-    )
-
-C21_PC_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C21-PC", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PC-C21'
-    )
-
-C16_PC_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C16-PC", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PC-C16'
-    )
-
-DGDAG_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1DGDG", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'DGDAG'
-    )
-
-C16_PAF_Import <- read_excel("C:/Users/canta/IPL-Processing/Data/Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C16PAF", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PAF-C16'
-    )
-
-##Must be a way to import all sheets and bind them into dataframe but could not get it to work.
-
-calib_standards <- rbind.fill(ARCHAEOL_Import, MGDAG_Import, Gly_Cer_Import, DGTS_Import, C16PA_Import, C16PDME_Import, C16PME_Import, C16PE_Import, C16PG_Import, SQDAG_Import, PC_ARCHAEOL_Import, PE_ARCHAEOL_Import, C21_PC_Import, C16_PC_Import, DGDAG_Import, C16_PAF_Import) %>%
-  filter(!grepl('N/F', Std_Area)) %>% 
-  transform(Std_Area = as.numeric(Std_Area)) %>% 
-  filter(Std_Area >0) ## Some standards possibly did not inject properly?
-
-
-
-ggplot(calib_standards, aes(x = Std_Amount, y = Std_Area)) +
-  geom_point(size = 3) + 
-  geom_smooth(method = "lm",aes (colour = "Linear"), se = TRUE, size = 1) +  
-  scale_color_manual(name = "Fits",
-                     breaks = c("Linear"),
-                     values = c("blue")) +
- stat_smooth(method = "nls", formula = y ~ a*exp(b*x), start = list(a=1,b=1),
-              aes(colour = "Exponential")) +
-    scale_color_manual(name = "Fits",
-                     breaks = c("Linear","Exponential"),
-                     values = c("red","blue")) +
-  facet_wrap(~Compound, scales = 'free')
-
-## How to add an exponential model  to compare??
-
-
-ggplot(calib_standards, aes(x = Std_Amount, y = Std_Area)) +
-  geom_point(size = 3) + 
- geom_smooth(method = "glm", formula = y~x, family = gaussian(link = 'log')) +
-    scale_color_manual(name = "Fits",
-                     breaks = c("Linear","Exponential"),
-                     values = c("red","blue")) +
-  facet_wrap(~Compound, scales = 'free')
-
-
-## How to extract linear regression intercept and coef to apply calibrations?
-
-lin_fit <- function(dat) {
-  the_fit <- lm(Std_Area ~ Std_Amount, dat)
-  setNames(data.frame(t(coef(the_fit))), c("intercept", "slope")) ## Not sure I understand why this works
-}
-
-lin_fit(calib_standards %>% filter(Compound == "ARCHAEOL")) ##Test function works on 1 compound
-
-lin_fits_df <- calib_standards %>% 
-  group_by(Compound) %>% 
-  do(lin_fit(.))
-```
-
-
-
-
-
-=======
----
-title: "IPL Data LowpHOX-2"
-author: "Sebastian Cantarero"
-date: "8/13/2018"
-output: html_document
----
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(plyr)
+library(plyr) # recommend not using plyr, dplyr is faster and better implemented
 library(tidyverse)
-library(ggplot2)
+library(ggplot2) # no need to load, part of tidyverse
 library(latex2exp)
 library(readxl)
-library(purrr)
-
+library(purrr) # no need to load, part of tidyverse
+library(here) # omg, so useful for paths to stuff in your project
+library(broom) # bring the broom! it's great for working with models
 ```
 
 
@@ -283,6 +30,9 @@ library(purrr)
 ##import csv files from HPLC computer (Quantitation reports) from working directory
 ## Can apply whatever filename/dataframe names you want here
 OG22_T5_250_0_3_SC_2 <- read_csv("OG22_T5-250-0-3_SC_2.csv")
+
+# oh oh - absolute paths and a lot of copy/paste code, time for a function :)
+# take a look at how the data_frame map combination is implemented below, this would make this a lot easier
 OG23_T5_60_0_3_SC_2 <- read_csv("~/R/Processing IPLs/OG23_T5-60-0-3_SC_2.csv")
 OG24_T5_45_0_3_SC_2 <- read_csv("~/R/Processing IPLs/OG24_T5-45-0-3_SC_2.csv")
 OG31_T3_55_0_3_SC_2 <- read_csv("~/R/Processing IPLs/OG31_T3-55-0-3_SC_2.csv")
@@ -480,14 +230,104 @@ calib_standards <- rbind.fill(ARCHAEOL_Import, MGDAG_Import, Gly_Cer_Import, DGT
 ##Must be a way to import all sheets and bind them into dataframe but could not get it to work.
 
 names <- c("Std_Amount", "Std_Area")
-path <- read_excel("Compound Calibration Report_IPLS standards.xlsx")
-calibs <- "Compound Calibration Report_IPLS standards.xlsx" %>%
+# sk: relative path to the data folder and file in it
+path <- here("Data", "Compound Calibration Report_IPLS standards.xlsx")
+calibs <- 
+  here("Data", "Compound Calibration Report_IPLS standards.xlsx") %>%
   excel_sheets() %>%
+  # sk: you're trying to rename the sheets in the excel spreadsheet?
   set_names(1:2, nm = names) %>% ## Has something to do with this function
+  # this doesn't find your sheets - they have different names in the spreadsheet but if you're just looking at the indices, why not select the sheets that way?
   map_df(~ read_excel("Compound Calibration Report_IPLS standards.xlsx", sheet = .x, range = "B35:C40"), .id = "sheet")
 
-
 ```
+
+SK: let me propose this alternative
+
+```{r}
+# location of the report
+path <- here("Data", "Compound Calibration Report_IPLS standards.xlsx")
+stopifnot(file.exists(path))
+
+# pull out calibrations
+calibs <- 
+  data_frame(
+    sheet_index = 1:2,
+    # bonus: not necessary for reading the file
+    sheet_name = excel_sheets(path)[sheet_index],
+    data = map(sheet_index, ~read_excel(
+      path, sheet = .x, 
+      range = "B34:C40",
+      col_types = c("numeric", "numeric")
+    ))
+  )
+# look at the data
+calibs # still nested
+calibs %>% unnest(data) # unnested
+calibs %>% unnest(data) %>% # plotted
+  filter(!is.na(Std_Area)) %>% 
+  ggplot() + aes(Std_Amount, Std_Area, color = sheet_name) + 
+  geom_smooth(method = "lm") + geom_point(size = 4)
+```
+
+Non-linear regressions need useful starting values to converge. Here's the logic for how I'm going to use the linear regression to start the nls.
+
+$$
+\begin{aligned}
+y &= a e^{bx} \\
+\text{Taylor expansion:  } y &= a \left( 1 + bx + \frac{b^2 x^2}{2!} + ...\right) \approx a + abx \\
+\text{Infer from linear regression: } a &= c \\
+\text{Infer from linear regression: }b &= m/c
+\end{aligned}
+$$
+
+```{r}
+# using safely to catch problems with the non-linear fit
+safe_nls <- safely(nls)
+
+# calibration fit
+calib_fits <- calibs %>% 
+  mutate(
+    lm_fit = map(
+      data, 
+      ~lm(Std_Area ~ Std_Amount, data = .x)
+    ),
+    lm_summary = map(lm_fit, glance),
+    lm_coefs = map(lm_fit, tidy),
+    a = map_dbl(lm_coefs, ~filter(.x, term == "(Intercept)")$estimate),
+    b = a / map_dbl(lm_coefs, ~filter(.x, term == "Std_Amount")$estimate),
+    nls_safe_fit = pmap(
+      list(data = data, a = a, b = b),
+      function(data, a, b) {
+        safe_nls(Std_Area ~ a * exp(b * Std_Amount), data = data, start = list(a = a, b = b))
+      }
+    ),
+    nls_fit_error = map_chr(
+      nls_safe_fit, 
+      ~if(is.null(.x$error)) {NA_character_} else {.x$error$message}),
+    nls_fit = map(nls_safe_fit, "result"),
+    nls_summary = map(nls_fit, ~if(!is.null(.x)) { glance(.x) } else { NULL }),
+    nls_coefs = map(nls_fit, ~if(!is.null(.x)) { tidy(.x) } else { NULL })
+  ) %>% select(-nls_safe_fit, -a, -b) 
+
+# looks like exponential is not a good fit here, even with better starting values
+calib_fits
+
+# linear fit summary and coefficients
+calib_fits %>% unnest(lm_summary)
+calib_fits %>% unnest(lm_coefs)
+```
+
+```{r}
+# use predict to plot calibration fit manually
+calib_fits %>% 
+  mutate(lm_predict = map(lm_fit, ~.x$model %>% mutate(Std_Area = predict(.x)))) %>% 
+  ggplot() + 
+  aes(Std_Amount, Std_Area, color = sheet_name) + 
+  geom_line(data = function(df) unnest(df, lm_predict), mapping = aes(linetype = "lm")) +
+  geom_point(data = function(df) unnest(df, data), size = 4)
+```
+
 
 
 ## Plotting calibration curves with linear and exponential fits
@@ -533,13 +373,3 @@ lin_fits_df <- calib_standards %>%
 
 
 ```
-
-
-
-
-
-
-```
-
-
->>>>>>> 654922c857d6812f5377ae520f5302aece3ae782

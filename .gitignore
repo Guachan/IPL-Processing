@@ -2,3 +2,5 @@
 .Rhistory
 .RData
 .Ruserdata
+
+# sk: you need more in your git ignore or you'll get all the funky $~ temp files office likes to make

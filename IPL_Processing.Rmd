@@ -5,15 +5,21 @@ date: "8/13/2018"
 output: html_document
 ---
 
+```{r, eval=FALSE}
+install.packages("here")
+```
+
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(plyr)
+library(plyr) # recommend not using plyr, dplyr is faster and better implemented
 library(tidyverse)
-library(ggplot2)
+library(ggplot2) # no need to load, part of tidyverse
 library(latex2exp)
 library(readxl)
-library(purrr)
-
+library(purrr) # no need to load, part of tidyverse
+library(here) # omg, so useful for paths to stuff in your project
+library(broom) # bring the broom! it's great for working with models
 ```
 
 
@@ -24,6 +30,9 @@ library(purrr)
 ##import csv files from HPLC computer (Quantitation reports) from working directory
 ## Can apply whatever filename/dataframe names you want here
 OG22_T5_250_0_3_SC_2 <- read_csv("OG22_T5-250-0-3_SC_2.csv")
+
+# oh oh - absolute paths and a lot of copy/paste code, time for a function :)
+# take a look at how the data_frame map combination is implemented below, this would make this a lot easier
 OG23_T5_60_0_3_SC_2 <- read_csv("~/R/Processing IPLs/OG23_T5-60-0-3_SC_2.csv")
 OG24_T5_45_0_3_SC_2 <- read_csv("~/R/Processing IPLs/OG24_T5-45-0-3_SC_2.csv")
 OG31_T3_55_0_3_SC_2 <- read_csv("~/R/Processing IPLs/OG31_T3-55-0-3_SC_2.csv")
@@ -221,14 +230,104 @@ calib_standards <- rbind.fill(ARCHAEOL_Import, MGDAG_Import, Gly_Cer_Import, DGT
 ##Must be a way to import all sheets and bind them into dataframe but could not get it to work.
 
 names <- c("Std_Amount", "Std_Area")
-path <- read_excel("Compound Calibration Report_IPLS standards.xlsx")
-calibs <- "Compound Calibration Report_IPLS standards.xlsx" %>%
+# sk: relative path to the data folder and file in it
+path <- here("Data", "Compound Calibration Report_IPLS standards.xlsx")
+calibs <- 
+  here("Data", "Compound Calibration Report_IPLS standards.xlsx") %>%
   excel_sheets() %>%
+  # sk: you're trying to rename the sheets in the excel spreadsheet?
   set_names(1:2, nm = names) %>% ## Has something to do with this function
+  # this doesn't find your sheets - they have different names in the spreadsheet but if you're just looking at the indices, why not select the sheets that way?
   map_df(~ read_excel("Compound Calibration Report_IPLS standards.xlsx", sheet = .x, range = "B35:C40"), .id = "sheet")
 
-
 ```
+
+SK: let me propose this alternative
+
+```{r}
+# location of the report
+path <- here("Data", "Compound Calibration Report_IPLS standards.xlsx")
+stopifnot(file.exists(path))
+
+# pull out calibrations
+calibs <- 
+  data_frame(
+    sheet_index = 1:2,
+    # bonus: not necessary for reading the file
+    sheet_name = excel_sheets(path)[sheet_index],
+    data = map(sheet_index, ~read_excel(
+      path, sheet = .x, 
+      range = "B34:C40",
+      col_types = c("numeric", "numeric")
+    ))
+  )
+# look at the data
+calibs # still nested
+calibs %>% unnest(data) # unnested
+calibs %>% unnest(data) %>% # plotted
+  filter(!is.na(Std_Area)) %>% 
+  ggplot() + aes(Std_Amount, Std_Area, color = sheet_name) + 
+  geom_smooth(method = "lm") + geom_point(size = 4)
+```
+
+Non-linear regressions need useful starting values to converge. Here's the logic for how I'm going to use the linear regression to start the nls.
+
+$$
+\begin{aligned}
+y &= a e^{bx} \\
+\text{Taylor expansion:  } y &= a \left( 1 + bx + \frac{b^2 x^2}{2!} + ...\right) \approx a + abx \\
+\text{Infer from linear regression: } a &= c \\
+\text{Infer from linear regression: }b &= m/c
+\end{aligned}
+$$
+
+```{r}
+# using safely to catch problems with the non-linear fit
+safe_nls <- safely(nls)
+
+# calibration fit
+calib_fits <- calibs %>% 
+  mutate(
+    lm_fit = map(
+      data, 
+      ~lm(Std_Area ~ Std_Amount, data = .x)
+    ),
+    lm_summary = map(lm_fit, glance),
+    lm_coefs = map(lm_fit, tidy),
+    a = map_dbl(lm_coefs, ~filter(.x, term == "(Intercept)")$estimate),
+    b = a / map_dbl(lm_coefs, ~filter(.x, term == "Std_Amount")$estimate),
+    nls_safe_fit = pmap(
+      list(data = data, a = a, b = b),
+      function(data, a, b) {
+        safe_nls(Std_Area ~ a * exp(b * Std_Amount), data = data, start = list(a = a, b = b))
+      }
+    ),
+    nls_fit_error = map_chr(
+      nls_safe_fit, 
+      ~if(is.null(.x$error)) {NA_character_} else {.x$error$message}),
+    nls_fit = map(nls_safe_fit, "result"),
+    nls_summary = map(nls_fit, ~if(!is.null(.x)) { glance(.x) } else { NULL }),
+    nls_coefs = map(nls_fit, ~if(!is.null(.x)) { tidy(.x) } else { NULL })
+  ) %>% select(-nls_safe_fit, -a, -b) 
+
+# looks like exponential is not a good fit here, even with better starting values
+calib_fits
+
+# linear fit summary and coefficients
+calib_fits %>% unnest(lm_summary)
+calib_fits %>% unnest(lm_coefs)
+```
+
+```{r}
+# use predict to plot calibration fit manually
+calib_fits %>% 
+  mutate(lm_predict = map(lm_fit, ~.x$model %>% mutate(Std_Area = predict(.x)))) %>% 
+  ggplot() + 
+  aes(Std_Amount, Std_Area, color = sheet_name) + 
+  geom_line(data = function(df) unnest(df, lm_predict), mapping = aes(linetype = "lm")) +
+  geom_point(data = function(df) unnest(df, data), size = 4)
+```
+
 
 
 ## Plotting calibration curves with linear and exponential fits
@@ -274,12 +373,3 @@ lin_fits_df <- calib_standards %>%
 
 
 ```
-
-
-
-
-
-
-```
-
-

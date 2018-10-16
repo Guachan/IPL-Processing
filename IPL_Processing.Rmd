@@ -112,6 +112,19 @@ data <- bind_rows(t5_28_2, t5_35_2, t3_25_2, t3_14_2, t3_9_2, t3_55_2, t5_45_2, 
   
 
 ##write.csv(data,"Uncalib2_2.csv")
+
+
+
+# JHR
+# Here's the script I was using for importing a bunch of csvs in one go. 
+
+setwd("Data/") #temporarily set the working directory
+temp <- list.files(pattern="*.csv") #makes a list of all the file names ending in .csv
+myfiles <- lapply(temp, read.csv) #lapply applies read.csv to the whole temp list, stores in a list
+myfiles_bound <- data.table::rbindlist(myfiles, fill = TRUE) #bind all data into one table
+# automatically returns to original wd
+
+# You can add options when you read the csv too, like lapply(temp, read.csv, skip = 4), to parse the input a little
 ```
 
 
@@ -314,7 +327,7 @@ calib_fits <- calibs %>%
 calib_fits
 
 # linear fit summary and coefficients
-calib_fits %>% unnest(lm_summary)
+calib_fits %>% unnest(lm_summary) %>% unnest(lm_coefs)
 calib_fits %>% unnest(lm_coefs)
 ```
 
@@ -373,3 +386,58 @@ lin_fits_df <- calib_standards %>%
 
 
 ```
+
+
+
+# JHR things to add
+
+
+## After examining the fits, it'd be good to add a chunk to cull any outliers
+```{r}
+# Culling script here...
+```
+
+
+## Applying the numbers in calib_fits to the data
+
+We need to assign a standard to each compound. The "dictionary" type in python would be great for this. From some googling looks like a list is a good approximation in R? Seb?
+
+Option 1:
+```{r}
+std_assignments <- c("Std1", "Std2", "Std1")
+names(std_assignments) <- c("Compound_A", "Compound_B", "Compound_C")
+
+std_assignments # Look at the full dictionary
+std_assignments[["Compound_B"]] # Get the std for a given compound
+c(std_assignments, "Compound_D" = "Std5") # Add a compound + std pair (and reassign to std_assignments to overwrite)
+
+```
+
+Option 2:
+```{r}
+# Really we'd probably make this a .csv and import it for easy editing
+std_assignments_opt2 <- data.frame(
+  Compound = c("Compound_A", "Compound_B", "Compound_C"), 
+  Standard = c("Std1", "Std2", "Std1")
+)
+
+filter(std_assignments_opt2, Compound == "Compound_B")[1,2] # Get the std for a given compound? This might have type issues
+```
+
+Once each compound has a standard assigned to it, we can pull out the fits from the calibration curves.
+
+Should be able to mutate the data frame with all the raw IPL data and add a column with the calibrated area. Theoretically, you could do this by using the name of the compound to call the name of the standard (via the std_assignments table), which could then be used to call the slope and intercept out of the calib_fits results table and applying a linear equation. Pulling out the slope and intercept is lengthy though (see below) - maybe it'd be best to define a function and map it?
+
+```{r}
+# One way to select the estimate for the intercept of the Archaeol calibration:
+calib_fits %>% unnest(lm_coefs) %>% filter(
+  sheet_name == "Sheet1ARCHAEOL",
+  term == "(Intercept)"
+) %>% select(estimate)
+
+# Another way. Shorter, but requires assigning a new variable
+coefs <- filter(calib_fits, sheet_name == "Sheet1ARCHAEOL")["lm_coefs"] %>% unnest(lm_coefs)
+coefs[1,2]
+```
+
+

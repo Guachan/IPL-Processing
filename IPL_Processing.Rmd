@@ -12,237 +12,41 @@ install.packages("here")
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(plyr) # recommend not using plyr, dplyr is faster and better implemented
+library(dplyr)
 library(tidyverse)
-library(ggplot2) # no need to load, part of tidyverse
 library(latex2exp)
 library(readxl)
-library(purrr) # no need to load, part of tidyverse
-library(here) # omg, so useful for paths to stuff in your project
-library(broom) # bring the broom! it's great for working with models
+library(here) 
+library(broom) 
 ```
 
 
 ## Sample Data Import
 
-```{r}
-## Testing out different methods for importing data
-##import csv files from HPLC computer (Quantitation reports) from working directory
-## Can apply whatever filename/dataframe names you want here
-OG22_T5_250_0_3_SC_2 <- read_csv("OG22_T5-250-0-3_SC_2.csv")
 
-# oh oh - absolute paths and a lot of copy/paste code, time for a function :)
-# take a look at how the data_frame map combination is implemented below, this would make this a lot easier
-OG23_T5_60_0_3_SC_2 <- read_csv("~/R/Processing IPLs/OG23_T5-60-0-3_SC_2.csv")
-OG24_T5_45_0_3_SC_2 <- read_csv("~/R/Processing IPLs/OG24_T5-45-0-3_SC_2.csv")
-OG31_T3_55_0_3_SC_2 <- read_csv("~/R/Processing IPLs/OG31_T3-55-0-3_SC_2.csv")
-OG32_T3_25_0_3_SC_2 <- read_csv("~/R/Processing IPLs/OG32_T3-25-0-3_SC_2.csv")
-OG33_T3_9_0_3_SC_2 <- read_csv("~/R/Processing IPLs/OG33_T3-9-0-3_SC_2.csv")
-OG34_T5_35_0_3_SC_2 <- read_csv("~/R/Processing IPLs/OG34_T5-35-0-3_SC_2.csv")
-OG39_T5_28_0_3_SC_2 <- read_csv("OG39_T5-28-0-3_SC_2.csv")
-QOG30_T3_250_0_3_SC_2 <- read_csv("QOG30_T3-250-0-3_SC_2.csv")
-QOG37_T3_14_0_3_SC_2 <- read_csv("QOG37_T3-14-0-3_SC_2.csv")
-
-## Create dataframe of all peak areas according to station and depth.
-
-t5_250_2 <- data.frame(OG22_T5_250_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T5',
-         Depth = 250) %>% 
-  filter(!grepl('N/F', Response)) ##Removes mols with no detection
-  
-
-t5_60_2 <- data.frame(OG23_T5_60_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T5',
-         Depth = 60) %>% 
-  filter(!grepl('N/F', Response))
-
-t3_250_2 <- data.frame(QOG30_T3_250_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T3',
-         Depth = 250) %>% 
-  filter(!grepl('N/F', Response))
-
-t5_45_2 <- data.frame(OG24_T5_45_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T5',
-         Depth = 45) %>% 
-  filter(!grepl('N/F', Response))
-
-t3_55_2 <- data.frame(OG31_T3_55_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T3',
-         Depth = 55) %>% 
-  filter(!grepl('N/F', Response))
-
-t3_9_2 <- data.frame(OG33_T3_9_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T3',
-         Depth = 9) %>% 
-  filter(!grepl('N/F', Response))
-
-t3_14_2 <- data.frame(QOG37_T3_14_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T3',
-         Depth = 14) %>% 
-  filter(!grepl('N/F', Response))
-
-t3_25_2 <- data.frame(OG32_T3_25_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T3',
-         Depth = 25) %>% 
-  filter(!grepl('N/F', Response))
-
-t5_35_2 <- data.frame(OG34_T5_35_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T5',
-         Depth = 35) %>% 
-  filter(!grepl('N/F', Response))
-
-t5_28_2 <- data.frame(OG39_T5_28_0_3_SC_2) %>% 
-  select(Compound, Response) %>% 
-  mutate(Station = 'T5',
-         Depth = 28) %>% 
-  filter(!grepl('N/F', Response))
-
-data <- bind_rows(t5_28_2, t5_35_2, t3_25_2, t3_14_2, t3_9_2, t3_55_2, t5_45_2, t3_250_2, t5_60_2, t5_250_2) %>% 
-  filter(!grepl('Flag', Response)) %>% 
-  arrange(desc(Compound)) %>% na.omit() %>% unique() ##Removes duplicates and na values
-  
-
-##write.csv(data,"Uncalib2_2.csv")
+```{r import data, warning=FALSE}
+read_plus <- function(flnm) {
+    read_csv(flnm, col_names = TRUE) %>% ## For some reason these csvs do weird things when trying to skip rows in the import
+        mutate(filename = flnm) ### Add filename to read_csv import
+}
+setwd("C:/Users/canta/IPL-Processing/Data")
+samples <-
+    list.files(pattern = "*.csv", 
+               full.names = T) %>% 
+    map_df(~read_plus(.)) %>% 
+    select(c("Compound", "Response", "filename")) %>% 
+    filter(!grepl('N/F', Response)) %>% ##removes troublesome strings from the quant report
+    filter(!grepl('Flags', Response)) %>% 
+    mutate( Response = as.numeric(Response)) %>% ## This was only necessary because the skip rows wasn't working as expected
+    na.omit() %>% 
+    unique() %>% 
+  mutate(OG = as.numeric(substr(filename, 5, 6)), ## relevant infomration from sample names (depth, station etc)
+         station = substr(filename, 8, 9),
+         depth = as.numeric(substr(filename, 11, 13)),
+         fraction = 0.3)
 ```
 
-
-## Calibration Standard Input (The Hard Way)
-```{r}
-## Apply calibration -- These calibrations may differ from run to run so it's best to use from the day of your run or the nearest date available. Also the format depending on which standard mix you ran. We could make several of these for different standard mixes.
-
-## I found it easiest to replace all the Std Area and Std Amounts in the spreadsheet with Std_Area and Std_Amounts in excel before importing.
-
-ARCHAEOL_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1ARCHAEOL", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'ARCHAEOL'
-    )
-
-MGDAG_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1MGDG", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'MGDAG'
-    )
-
-Gly_Cer_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet11-GLC-CER", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'Gly-Cer'
-    )
-
-DGTS_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1DGTS", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'DGTS'
-    )
-
-C16PA_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C16PA", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PA'
-    )
-
-C16PDME_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C16PDME", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PDME'
-    )
-
-C16PME_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C16PME", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PME'
-    )
-
-C16PE_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C16-PE", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PE'
-    )
-
-C16PG_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C16-PG", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PG'
-    )
-
-SQDAG_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1SQ-DAG", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'SQDAG'
-    )
-
-PC_ARCHAEOL_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1PC-ARCHAEOL", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PC-ARCHAEOL'
-    )
-
-PE_ARCHAEOL_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1PE-AR", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PE-ARCHAEOL'
-    )
-
-C21_PC_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C21-PC", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PC-C21'
-    )
-
-C16_PC_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C16-PC", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PC-C16'
-    )
-
-DGDAG_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1DGDG", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'DGDAG'
-    )
-
-C16_PAF_Import <- read_excel("Compound Calibration Report_IPLS standards.xlsx", 
-    sheet = "Sheet1C16PAF", na = "N/A", 
-    skip = 33) %>% mutate(
-      Compound = 'PAF-C16'
-    )
-
-calib_standards <- rbind.fill(ARCHAEOL_Import, MGDAG_Import, Gly_Cer_Import, DGTS_Import, C16PA_Import, C16PDME_Import, C16PME_Import, C16PE_Import, C16PG_Import, SQDAG_Import, PC_ARCHAEOL_Import, PE_ARCHAEOL_Import, C21_PC_Import, C16_PC_Import, DGDAG_Import, C16_PAF_Import) %>%
-  filter(!grepl('N/F', Std_Area)) %>% 
-  transform(Std_Area = as.numeric(Std_Area)) %>% 
-  filter(Std_Area >0) %>%  ## Some standards possibly did not inject properly?
-  data.frame()
-```
-
-
-## Calibration Standard Import (Should be easier if it works)
-```{r}
-##Must be a way to import all sheets and bind them into dataframe but could not get it to work.
-
-names <- c("Std_Amount", "Std_Area")
-# sk: relative path to the data folder and file in it
-path <- here("Data", "Compound Calibration Report_IPLS standards.xlsx")
-calibs <- 
-  here("Data", "Compound Calibration Report_IPLS standards.xlsx") %>%
-  excel_sheets() %>%
-  # sk: you're trying to rename the sheets in the excel spreadsheet?
-  set_names(1:2, nm = names) %>% ## Has something to do with this function
-  # this doesn't find your sheets - they have different names in the spreadsheet but if you're just looking at the indices, why not select the sheets that way?
-  map_df(~ read_excel("Compound Calibration Report_IPLS standards.xlsx", sheet = .x, range = "B35:C40"), .id = "sheet")
-
-```
-
-SK: let me propose this alternative
+## Import calibration standards
 
 ```{r}
 # location of the report
@@ -252,7 +56,7 @@ stopifnot(file.exists(path))
 # pull out calibrations
 calibs <- 
   data_frame(
-    sheet_index = 1:2,
+    sheet_index = 1:16,
     # bonus: not necessary for reading the file
     sheet_name = excel_sheets(path)[sheet_index],
     data = map(sheet_index, ~read_excel(
@@ -269,6 +73,9 @@ calibs %>% unnest(data) %>% # plotted
   ggplot() + aes(Std_Amount, Std_Area, color = sheet_name) + 
   geom_smooth(method = "lm") + geom_point(size = 4)
 ```
+
+
+## Regression Models
 
 Non-linear regressions need useful starting values to converge. Here's the logic for how I'm going to use the linear regression to start the nls.
 
@@ -329,8 +136,110 @@ calib_fits %>%
 ```
 
 
+## Apply regressions to the data!!
+
+```{r}
+linear_model_fit <- calib_fits %>% unnest(lm_coefs)
+MGDG_int <- linear_model_fit$estimate[3]
+MGDG_slope <- linear_model_fit$estimate[4]
+PG_int <- linear_model_fit$estimate[17]
+PG_slope <- linear_model_fit$estimate[18]
+PE_int <- linear_model_fit$estimate[15]
+PE_slope <- linear_model_fit$estimate[16]
+PC_int <- linear_model_fit$estimate[25]
+PC_slope <- linear_model_fit$estimate[26] ## couldn't figure out how the crossing method Seb suggested would work, might need to clean up the claibration sheet names first. This is clunky, but serves as a place holder for now
+
+
+samples <- samples %>% ## This works but clunky
+  arrange(Compound) %>% 
+  mutate(calibrated = 
+           case_when(grepl("MGDG", Compound) ~ (Response - MGDG_int)/MGDG_slope, ##apply calib based on str
+                     grepl("PE", Compound) ~ (Response - PE_int)/PE_slope,
+                     grepl("PG", Compound) ~ (Response - PG_int)/PG_slope,
+                     grepl("PC", Compound) ~ (Response - PC_int)/PC_slope))
+
+
+
+##test1 <- crossing(samples, linear_model_fit) %>% ## Crossing method to apply calib?
+#  group_by(Compounds) %>%
+ # mutate(
+ #   test = if_else()
+         
+         
+
+#Compounds that have a standard to calibrate are TRUE = 1 , False = 0 ## Match strings?
+```
+
+
+## Apply internal standard correction
+```{r}
+path2 <- here("Data", "Lab Notebook_2018.csv")
+lab_notebook <- read_csv(path2) ##Import lab notebook with injection volumes/concentrations
+ 
+Lowphox2_notes <- filter(
+  lab_notebook, Project == "LowpHOX2") %>% 
+    filter(Fraction == 0.3) %>% 
+  mutate(Fraction_of_total = Total_Injected2 / (TLE_mg*1000),
+         IS_Expected = Fraction_of_total*C16_PAF_ng) %>% 
+  select(OG, Fraction_of_total, IS_Expected)## Filter out the samples of interest
+
+##IS_Measured <- samples %>% 
+  #filter(Compound = "C16PAF") %>%
+ # arrange(OG, desc()) ## Code block for extracting internal standard from fullscan run for now using fake numbers
+  
+IS_Values <- c(.7, .8, .7, .7, .6, .5, .7, 7, .7, 0, .7) %>% 
+  tbl_df() %>% 
+  mutate(OG = Lowphox2_notes$OG) %>% 
+  rename(IS_Measured = value)##Made up IS values for calibration
+
+samples <- merge(samples, IS_Values, by = "OG") %>% 
+  merge(Lowphox2_notes, by = "OG")
+
+calibrated_samples <- samples %>% 
+    mutate(
+      iscorrected = calibrated * (IS_Expected / IS_Measured),
+      total = iscorrected/Fraction_of_total,
+      total_L = total/200) ## Might be different volumes of water or grams of sed
+
+  
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## Plotting calibration curves with linear and exponential fits
+
+##Maybe just ignore this for now:
 ```{r}
 ggplot(calib_standards, aes(x = Std_Amount, y = Std_Area)) +
   geom_point(size = 3) + 

@@ -25,25 +25,31 @@ library(broom)
 
 
 ```{r import data, warning=FALSE}
-read_plus <- function(flnm) {
-    read_csv(flnm, col_names = TRUE) %>% ## For some reason these csvs do weird things when trying to skip rows in the import
-        mutate(filename = flnm) ### Add filename to read_csv import
-}
-setwd("C:/Users/canta/IPL-Processing/Data")
+path <- here("Data") # sk: hardcoded file paths are the root of all evil
 samples <-
-    list.files(pattern = "*.csv", 
-               full.names = T) %>% 
-    map_df(~read_plus(.)) %>% 
-    select(c("Compound", "Response", "filename")) %>% 
-    filter(!grepl('N/F', Response)) %>% ##removes troublesome strings from the quant report
-    filter(!grepl('Flags', Response)) %>% 
-    mutate( Response = as.numeric(Response)) %>% ## This was only necessary because the skip rows wasn't working as expected
-    na.omit() %>% 
-    unique() %>% 
-  mutate(OG = as.numeric(substr(filename, 5, 6)), ## relevant infomration from sample names (depth, station etc)
-         station = substr(filename, 8, 9),
-         depth = as.numeric(substr(filename, 11, 13)),
-         fraction = 0.3)
+  # sk: easier within a data frame and mapping instead of map_df
+  data_frame(
+    filename = list.files(path, pattern = "OG.*\\.csv")[1],
+    data = map(
+      filename,
+      ~read.csv(file.path(path, .x), as.is = TRUE) %>% as_data_frame()
+    )
+  )
+
+# pulling out the information is easier with pattern recognition
+pattern <- "OG(\\d+)_T(\\d+)-(\\d+)"
+samples <- samples %>% unnest() %>% 
+  select(Compound, Response, filename) %>% 
+  filter(!grepl('N/F', Response)) %>% ##removes troublesome strings from the quant report
+  filter(!grepl('Flags', Response)) %>%
+  mutate(Response = as.numeric(Response)) %>% ## This was only necessary because the skip rows wasn't working as expected
+  na.omit() %>%
+  unique() %>%
+  mutate(
+    OG = str_match(filename, pattern) %>% { .[,2] },
+    station = str_match(filename, pattern) %>% { .[,3] },
+    depth = str_match(filename, pattern) %>% { .[,4] },
+    fraction = 0.3)
 ```
 
 ## Import calibration standards

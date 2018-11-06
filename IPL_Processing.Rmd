@@ -186,7 +186,8 @@ Lowphox2_notes <- filter(
   lab_notebook, Project == "LowpHOX2") %>% 
     filter(Fraction == 0.3) %>% 
   mutate(Fraction_of_total = Total_Injected2 / (TLE_mg*1000),
-         IS_Expected = Fraction_of_total*C16_PAF_ng) %>% 
+         IS_Expected = Fraction_of_total*C16_PAF_ng, 
+         OG = as.character(OG)) %>% 
   select(OG, Fraction_of_total, IS_Expected)## Filter out the samples of interest
 
 ##IS_Measured <- samples %>% 
@@ -195,11 +196,13 @@ Lowphox2_notes <- filter(
   
 IS_Values <- c(.7, .8, .7, .7, .6, .5, .7, 7, .7, 0, .7) %>% 
   tbl_df() %>% 
-  mutate(OG = Lowphox2_notes$OG) %>% 
-  rename(IS_Measured = value)##Made up IS values for calibration
+  mutate(OG = as.character(Lowphox2_notes$OG)) %>% 
+  rename(IS_Measured = value) ##Made up IS values for calibration
 
-samples <- merge(samples, IS_Values, by = "OG") %>% 
-  merge(Lowphox2_notes, by = "OG")
+
+samples <- left_join(samples, IS_Values, by = "OG") 
+samples <- left_join(samples, Lowphox2_notes, by = "OG")
+
 
 calibrated_samples <- samples %>% 
     mutate(
@@ -207,12 +210,7 @@ calibrated_samples <- samples %>%
       total = iscorrected/Fraction_of_total,
       total_L = total/200) ## Might be different volumes of water or grams of sed
 
-  
-
-
-
-
-
+##KRR: why are some of these values so negative??
 ```
 
 

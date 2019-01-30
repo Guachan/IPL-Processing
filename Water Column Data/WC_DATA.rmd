@@ -1,0 +1,121 @@
+---
+title: "Water Profiles"
+author: "Sebastian Cantarero"
+date: "8/13/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(latex2exp)
+```
+
+
+
+
+## Import text files
+
+```{r}
+t3_oxygen <- read.delim('LOWPHOX2_T03_001.txt', header = TRUE, sep = "", quote = "\"", dec = ".", fill = TRUE, skip = 5, nrows = 22) %>% arrange(desc(DepSM)) %>% data.frame() %>% 
+  mutate(ox1 = Ox0ML.L/1.42903/15.99*1000) %>%  ## conversion from pppm to umol/L
+  mutate(station = 3) %>% 
+  mutate(Depth =DepSM) %>% 
+  select(Depth, ox1, station)
+
+t5_oxygen <- read.delim('LOWPHOX2_T05_001.txt', header = TRUE, sep = "", quote = "\"", dec = ".", fill = TRUE, skip = 5, nrows = 22) %>% arrange(desc(DepSM)) %>% 
+  mutate(ox1 = Ox0ML.L/1.42903/15.99*1000) %>%  ## conversion from pppm to umol/L
+  mutate(station = 5) %>% 
+  mutate(Depth = DepSM) %>% 
+  select(Depth, ox1, station)
+
+t3_chl <- read.delim('Chlorophyll_T3.txt', header = FALSE, sep = "", quote = "\"", dec = ".", fill = TRUE, skip = 0) %>% 
+  data.frame() %>% 
+  mutate(station = 3) %>% 
+  mutate(Depth = V1) %>% 
+  mutate(chl = V11) %>% 
+  select(Depth, chl, station)
+
+t5_chl <- read.delim('Chlorophyll_T5.txt', header = FALSE, sep = "", quote = "\"", dec = ".", fill = TRUE, skip = 0) %>% 
+  data.frame() %>% 
+  mutate(station = 5) %>% 
+  mutate(Depth = V1) %>% 
+  mutate(chl = V11) %>% 
+  select(Depth, chl, station)
+
+oxygen_all <- bind_rows(t3_oxygen, t5_oxygen) %>% 
+  mutate(Concentration = ox1) %>% 
+  mutate(Compound = "ox") %>% 
+  select(Depth, Concentration, Compound, station)
+
+scalefactor1 <- max(t3_chl$chl)/max(t3_oxygen$ox1)
+
+chl_all <- bind_rows(t3_chl, t5_chl) %>% 
+  mutate(Concentration = chl/scalefactor1) %>% ##applying scaling factor for plotting
+  mutate(Compound = "chl") %>% 
+  select(Depth, Concentration, Compound, station)
+
+data1 <- bind_rows(oxygen_all, chl_all)
+
+nutrients <- read.delim('BIGRAPA.txt', header = TRUE, sep = "", quote = "\"", dec = ".", fill = TRUE, skip = 0) %>% 
+  select(Depth, PO4, NO3_NO2, NO2, NH4) %>%
+  mutate(PO4 = PO4/(scalefactor1*10), NO2 = NO2/(scalefactor1*10), NH4 = NH4/(scalefactor1*10)) %>% 
+  ##mutate (NO3_NO2 = NO3_NO2/(scalefactor1)) %>% ## divide NO3_NO2 by 10 to scale
+  gather(key = "Compound", value = Concentration, -Depth) %>% data.frame() %>% na.omit() %>% 
+  mutate(station = 10) ## Calling BIGRAPA data station 10
+
+
+
+big_chl_ox <- read.delim('BIGRAPA_chl_ox.txt', header = TRUE, sep = "", quote = "\"", dec = ".", fill = TRUE, skip = 0) %>% 
+  select(Depth, ox, chl) %>% 
+  mutate(chl = chl/scalefactor1) %>% ## scaling factor for plotting
+  gather(key = "Compound", value = Concentration, -Depth) %>% 
+  data.frame() %>% na.omit() %>% 
+  mutate(station = 7) ## calling bigrapa ox and chl station 7
+  
+  
+
+data2 <- bind_rows(data1, big_chl_ox, nutrients)
+```
+
+
+```{r}
+
+cbbPalette <- c("#009E73", "#E69F00", "#56B4E9", "#D55E00", "#999999", "#000000")
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+ggplot(data2) +
+  geom_path(mapping = aes(x = Concentration, y = Depth, color = Compound), size = 1.5) +
+  facet_grid (~ station, scales = "free") +
+  scale_y_reverse() +
+  labs (y = 'Depth(m)') +
+  ##geom_point (mapping = aes(x = Concentration, y = Depth, color = Compound), size = 2) +
+    scale_color_manual(name = "Compound", 
+                     values = cbbPalette, 
+                     labels = c("Chl", expression(NH[4]), expression(NO[2]), expression(NO[3]+NO[2]), expression(O[2]), expression(PO[4]))) +
+  scale_x_continuous(breaks = seq(0,275,50), name = latex2exp::TeX("$\\O_{2}(\\mu M)$"), sec.axis = sec_axis(~.*scalefactor1, name = latex2exp::TeX("$\\Chlorophyll (\\mu g/L)$"))) +
+  ##theme_bw() +
+  theme(
+    strip.background = element_rect(fill="steelblue1"),
+    strip.text = element_blank(),
+    panel.background = element_rect(fill = "grey88"),
+    panel.grid.major = element_line(colour = "white"),
+    text = element_text(size = 20),
+    axis.ticks.length=unit(.1, "in"),
+    axis.title.x.top = element_text(color = "#009E73", hjust = .35),
+    axis.text.x.top = element_text(color = "#009E73"),
+    axis.text.x = element_text(color = "#999999"),
+    axis.title.x = element_text(color = "#999999", hjust = .35),
+    legend.text.align = 0) +
+  coord_fixed(ylim = c(0,400), ratio = 1/2) +
+  ggsave("Station_data_16by6_400m.png", width = 16, height = 6, units = "in")
+
+```
+
+
+```
+
+
+
+

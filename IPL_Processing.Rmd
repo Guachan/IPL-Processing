@@ -2,7 +2,15 @@
 title: "IPL Data LowpHOX-2"
 author: "Sebastian Cantarero"
 date: "8/13/2018"
-output: html_document
+output:
+  html_document: 
+    df_print: paged
+    toc: yes
+    toc_depth: 2
+    toc_float: true
+    code_folding: show
+editor_options:
+  chunk_output_type: inline
 ---
 
 ```{r, eval=FALSE}
@@ -22,12 +30,15 @@ library(broom)
 
 
 ## Sample Data Import
+```{r}
+knitr::include_graphics("Kosmos_Maps_Draft_Small.png")
+```
+
 
 
 ```{r import data, warning=FALSE, message=FALSE}
-path <- here("Data") # sk: hardcoded file paths are the root of all evil
+path <- here("Data")
 samples <-
-  # sk: easier within a data frame and mapping instead of map_df
   data_frame(
     filename = list.files(path, pattern = "OG.*\\.csv")[1:23],
     data = map(
@@ -35,7 +46,6 @@ samples <-
       ~read_csv(file.path(path, .x)) %>% as_data_frame()
     )
   )
-
 # pulling out the information is easier with pattern recognition
 pattern <- "OG(\\d+)_T(\\d+)-(\\d+)-(\\d+)"
 samples <- samples %>% unnest(.id = 'filename') %>% 
@@ -43,10 +53,10 @@ samples <- samples %>% unnest(.id = 'filename') %>%
   filter(!grepl('N/F', Response)) %>% ##removes troublesome strings from the quant report
   filter(!grepl('Flags', Response)) %>%
   mutate(Response = as.numeric(Response)) %>% ## This was only necessary because the skip rows wasn't working as expected
- # na.omit() %>%
+ # na.omit() %>% # might want to keep nas to leave in "0" concentrations for some IPL classes
   unique() %>%
   mutate(
-    OG = str_match(filename, pattern) %>% { .[,2] },
+    OG = str_match(filename, pattern) %>% { .[,2] }, #Cleaning up variable names
     station = str_match(filename, pattern) %>% { .[,3] },
     depth = str_match(filename, pattern) %>% { .[,4] },
     fraction = str_match(filename, pattern) %>% { .[,5] },
@@ -56,12 +66,12 @@ samples <- samples %>% unnest(.id = 'filename') %>%
 
 ## Import calibration standards
 
-```{r}
-# location of the report
+### Best to use calibration standards from the same run as your samples (or as near as possible)
+
+```{r, warning=FALSE, message=FALSE}
 path <- here("Data", "Compound Calibration Report_IPLS standards.xlsx")
 stopifnot(file.exists(path))
-
-# pull out calibrations
+# pull out 16 calibrations from single xls file
 calibs <- 
   data_frame(
     sheet_index = 1:16,
@@ -97,9 +107,6 @@ y &= a e^{bx} \\
 $$
 
 ```{r}
-# using safely to catch problems with the non-linear fit
-safe_nls <- safely(nls)
-
 # calibration fit
 calib_fits <- calibs %>% 
   mutate(
@@ -110,23 +117,9 @@ calib_fits <- calibs %>%
     lm_summary = map(lm_fit, glance),
     lm_coefs = map(lm_fit, tidy),
     a = map_dbl(lm_coefs, ~filter(.x, term == "(Intercept)")$estimate),
-    b = a / map_dbl(lm_coefs, ~filter(.x, term == "Std_Amount")$estimate),
-    nls_safe_fit = pmap(
-      list(data = data, a = a, b = b),
-      function(data, a, b) {
-        safe_nls(Std_Area ~ a * exp(b * Std_Amount), data = data, start = list(a = a, b = b))
-      }
-    ),
-    nls_fit_error = map_chr(
-      nls_safe_fit, 
-      ~if(is.null(.x$error)) {NA_character_} else {.x$error$message}),
-    nls_fit = map(nls_safe_fit, "result"),
-    nls_summary = map(nls_fit, ~if(!is.null(.x)) { glance(.x) } else { NULL }),
-    nls_coefs = map(nls_fit, ~if(!is.null(.x)) { tidy(.x) } else { NULL })
-  ) %>% select(-nls_safe_fit, -a, -b) 
+    b = a / map_dbl(lm_coefs, ~filter(.x, term == "Std_Amount")$estimate))
 
-# looks like exponential is not a good fit here, even with better starting values
-calib_fits
+
 
 # linear fit summary and coefficients
 calib_fits %>% unnest(lm_summary)
@@ -147,9 +140,12 @@ calib_fits %>%
 ## Apply regressions to the data!!
 
 ```{r, message=FALSE}
+## Assign intercept and slope variables for each standard
 linear_model_fit <- calib_fits %>% unnest(lm_coefs)
 MGDG_int <- linear_model_fit$estimate[3]
 MGDG_slope <- linear_model_fit$estimate[4]
+GLC_Cer_int <- linear_model_fit$estimate[5]
+GLC_Cer_slope <- linear_model_fit$estimate[6]
 PDME_int <- linear_model_fit$estimate[9]
 PDME_slope <- linear_model_fit$estimate[10]
 PME_int <- linear_model_fit$estimate[13]
@@ -158,8 +154,8 @@ PG_int <- linear_model_fit$estimate[17]
 PG_slope <- linear_model_fit$estimate[18]
 PE_int <- linear_model_fit$estimate[15]
 PE_slope <- linear_model_fit$estimate[16]
-PC_int <- linear_model_fit$estimate[25]
-PC_slope <- linear_model_fit$estimate[26] 
+PC_int <- linear_model_fit$estimate[27]
+PC_slope <- linear_model_fit$estimate[28] 
 DGTS_slope <- linear_model_fit$estimate[8]
 DGTS_int <- linear_model_fit$estimate[7]
 SQDAG_slope <- linear_model_fit$estimate[20]
@@ -173,29 +169,54 @@ DGDG_int <- linear_model_fit$estimate[29]
 C16_PAF_int <- linear_model_fit$estimate[31]
 C16_PAF_slope <- linear_model_fit$estimate[32]
 
-## couldn't figure out how the crossing method Seb suggested would work, might need to clean up the claibration sheet names first. This is clunky, but serves as a place holder for now
+## couldn't figure out how the crossing method Seb suggested would work, might need to clean up the calibration sheet names first. This is clunky, but serves as a place holder for now
 
+
+# samples_calib <- samples %>% ## This works but clunky
+#   arrange(Compound) %>% 
+#   mutate(calibrated = 
+#            case_when(grepl("MGDG", Compound) ~ (Response - MGDG_int)/MGDG_slope, ##apply calib based on str
+#                      grepl("PE-DAG/AEG-\\d+", Compound) ~ (Response - PE_int)/PE_slope,
+#                      grepl("PE-DEG-\\d+", Compound) ~ (Response - PE_int)/PE_slope,
+#                      grepl("PG", Compound) ~ (Response - PG_int)/PG_slope,
+#                      grepl("PC-\\d+", Compound) ~ (Response - PC_int)/PC_slope,
+#                      grepl("C16-PC", Compound) ~ (Response - PC_int)/PC_slope,
+#                      grepl("PC-DEG-\\d+", Compound) ~ (Response - PC_int)/PC_slope,
+#                      grepl("PC-A", Compound) ~ (Response - PC_AR_int)/PC_AR_slope,
+#                      grepl("PDME", Compound) ~ (Response - PDME_int)/PDME_slope,
+#                      grepl("PME", Compound) ~ (Response - PME_int)/PME_slope,
+#                      grepl("DGTS", Compound) ~ (Response - DGTS_int)/DGTS_slope,
+#                      grepl("DGTA", Compound) ~ (Response - DGTS_int)/DGTS_slope,
+#                      grepl("SQ", Compound) ~ (Response - SQDAG_int)/SQDAG_slope,
+#                      grepl("PE-A", Compound) ~ (Response - PE_AR_int)/PE_AR_slope,
+#                      grepl("DGDG", Compound) ~ (Response - DGDG_int)/DGDG_slope,
+#                      grepl("C16PAF", Compound) ~ (Response - C16_PAF_int)/C16_PAF_slope,
+#                      grepl("1-GLC-CER", Compound) ~ (Response - GLC_Cer_int)/GLC_Cer_slope,
+#                      grepl("DGCC", Compound) ~ (Response - SQDAG_int)/SQDAG_slope)) %>% 
+#          mutate(calibrated = if_else(calibrated > 0, calibrated, 0)) ## Keep 0 values for simplicity in plotting later
 
 samples_calib <- samples %>% ## This works but clunky
   arrange(Compound) %>% 
   mutate(calibrated = 
-           case_when(grepl("MGDG", Compound) ~ (Response - MGDG_int)/MGDG_slope, ##apply calib based on str
-                     grepl("PE-DAG/AEG-\\d+", Compound) ~ (Response - PE_int)/PE_slope,
-                     grepl("PE-DEG-\\d+", Compound) ~ (Response - PE_int)/PE_slope,
-                     grepl("PG", Compound) ~ (Response - PG_int)/PG_slope,
-                     grepl("PC-\\d+", Compound) ~ (Response - PC_int)/PC_slope,
-                     grepl("PC-DEG-\\d+", Compound) ~ (Response - PC_int)/PC_slope,
-                     grepl("PC-A", Compound) ~ (Response - PC_AR_int)/PC_AR_slope,
-                     grepl("PDME", Compound) ~ (Response - PDME_int)/PDME_slope,
-                     grepl("PME", Compound) ~ (Response - PME_int)/PME_slope,
-                     grepl("DGTS", Compound) ~ (Response - DGTS_int)/DGTS_slope,
-                     grepl("SQ", Compound) ~ (Response - SQDAG_int)/SQDAG_slope,
-                     grepl("PE-A", Compound) ~ (Response - PE_AR_int)/PE_AR_slope,
-                     grepl("DGDG", Compound) ~ (Response - DGDG_int)/DGDG_slope,
-                     grepl("C16PAF", Compound) ~ (Response - C16_PAF_int)/C16_PAF_slope,
-                     grepl("DGCC", Compound) ~ (Response - SQDAG_int)/SQDAG_slope)) %>% 
+           case_when(grepl("MGDG", Compound) ~ Response/GLC_Cer_slope, ##apply calib based on str
+                     grepl("PE-DAG/AEG-\\d+", Compound) ~ Response/PE_slope,
+                     grepl("PE-DEG-\\d+", Compound) ~ Response/PE_slope,
+                     grepl("PG", Compound) ~ Response/PG_slope,
+                     grepl("PC-\\d+", Compound) ~ Response/PC_slope,
+                     grepl("C16-PC", Compound) ~ Response/PC_slope,
+                     grepl("PC-DEG-\\d+", Compound) ~ Response/PC_slope,
+                     grepl("PC-A", Compound) ~ Response/PC_AR_slope,
+                     grepl("PDME", Compound) ~ Response/PDME_slope,
+                     grepl("PME", Compound) ~ Response/PME_slope,
+                     grepl("DGTS", Compound) ~ Response/DGTS_slope,
+                     grepl("DGTA", Compound) ~ Response/DGTS_slope,
+                     grepl("SQ", Compound) ~ Response/SQDAG_slope,
+                     grepl("PE-A", Compound) ~ Response/PE_AR_slope,
+                     grepl("DGDG", Compound) ~ Response/DGDG_slope,
+                     grepl("C16PAF", Compound) ~ Response/C16_PAF_slope,
+                     #grepl("1-GLC-CER", Compound) ~ Response/GLC_Cer_slope,
+                     grepl("DGCC", Compound) ~ Response/SQDAG_slope)) %>% 
          mutate(calibrated = if_else(calibrated > 0, calibrated, 0)) ## Keep 0 values for simplicity in plotting later
-
 
 
 ##test1 <- crossing(samples, linear_model_fit) %>% ## Crossing method to apply calib?
@@ -216,33 +237,30 @@ lab_notebook <- read_csv(path2) ##Import lab notebook with injection volumes/con
  
 Lowphox2_notes <- filter(
   lab_notebook, Project == "LowpHOX2") %>% 
-  mutate(Fraction_of_total = Total_Injected2 / (TLE_mg*1000),
+  mutate(Fraction_of_total = Total_Injected2 / (TLE_mg*1000), # Calculate fraction injected out of total
          IS_Expected = Fraction_of_total*C16_PAF_ng) %>% 
   select(OG, Fraction_of_total, IS_Expected)## Filter out the samples of interest
 
 IS_Measured <- samples_calib %>% 
   filter(Compound == "C16PAF") %>% 
   select(OG, calibrated) %>% 
-  rename(calibrated_IS = calibrated)## Code block for extracting internal standard from fullscan run for now using fake numbers
+  rename(calibrated_IS = calibrated)## Code block for extracting internal standard from fullscan run
   
-#IS_Values <- c(.7, .8, .7, .7, .6, .5, .7, 7, .7, 0, .7) %>% 
-  #tbl_df() %>% ## Fake IS dataset
-  #mutate(OG = Lowphox2_notes$OG) %>% 
-  #rename(IS_Measured = value)##Made up IS values for calibration
 
 samples_IS <- merge(samples_calib, IS_Measured, by = "OG") %>% 
-  merge(Lowphox2_notes, by = "OG")
+  merge(Lowphox2_notes, by = "OG") ## Merge every sample with the internal standard measured for that sample
 
-IS_corrected_samples <- samples_IS %>% 
+IS_corrected_samples <- samples_IS %>% ## Apply internal standard calibration only if IS is lower in sample than what was added
     mutate(
       iscorrected = if_else(
         calibrated_IS < IS_Expected, calibrated * (IS_Expected / calibrated_IS), calibrated),
       total = iscorrected/Fraction_of_total,
       total_L = total/200)## Might be different volumes of water or grams of sed
+```
 
   
-## Some samples were not fully extracted, need to apply dilution correction
-
+### Some samples were not fully extracted, need to apply dilution correction
+```{r, message=FALSE}
 area_full <- (130/2)^2*pi ##area of full filter in mm2
 area_subsample <- ((20/2)^2*pi)*3 ##area of subsamples 3*20mm diameter
 area_correction <- area_full/area_subsample
@@ -251,9 +269,10 @@ final_corrected <- IS_corrected_samples %>%
   mutate(total_L = if_else(
   depth == c('028', '014'), area_correction * total_L, total_L) 
 )
+```
 
-## Need to add class column to df
-
+### Need to add class column to df for comparing samples by IPL classes, not structure
+```{r, message=FALSE}
 final_corrected <- final_corrected %>% 
   mutate(Class =
            case_when(grepl("MGDG", Compound) ~ "MG-DAG",
@@ -266,16 +285,19 @@ final_corrected <- final_corrected %>%
                      grepl("PDME", Compound) ~ "PDME-DAG/AEG",
                      grepl("PME", Compound) ~ "PME-DAG/AEG",
                      grepl("DGTS", Compound) ~ "DGTS+DGTA",
+                     grepl("DGTA", Compound) ~ "DGTS+DGTA",
                      grepl("SQ", Compound) ~ "SQ-DAG/AEG",
                      grepl("PE-A", Compound) ~ "P-Archaeol",
                      grepl("DGDG", Compound) ~ "DG-DAG",
+                     #grepl("1-GLC-CER", Compound) ~ "Gly-Cer",
                      grepl("DGCC", Compound) ~ "DGCC")) %>% 
   na.omit()
+```
 
-## Calculate some useful indices, totals for each class, totals for each depth etc.
+## Calculate some useful indices, totals for each class and depth etc.
 
 ### Station 3
-
+```{r, message=FALSE}
 t3_ipls_1 <- final_corrected %>% filter(station == '3') ## Separate stations
 t3_ipls_2 <- aggregate(total_L ~ Class + depth + fraction, data = t3_ipls_1, sum) ## totals for each class at each depth and fraction
 
@@ -283,24 +305,25 @@ total_yield_t3 <- aggregate(total_L ~ depth + fraction, data = t3_ipls_2, sum) %
   mutate(Total = total_L) %>% 
   select(depth, fraction, Total)
 
-t3_ipl_plot <- left_join(by = c('depth', 'fraction'), total_yield_t3, t3_ipls_2) %>% 
+t3_ipl_plot <- left_join(by = c('depth', 'fraction'), total_yield_t3, t3_ipls_2) %>% ## Join totals for each depth with all molecule measurments
   mutate(percentage = total_L/Total *100) %>% 
   arrange(desc(Class))
 
 t3_ipl_plot_0.3 <- t3_ipl_plot %>% 
   filter(fraction == '0.3') %>% 
-  mutate(order = c(1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6))
+  mutate(order = c(1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6)) #Weird relic of processing method not indicating all 0 values
 
 t3_ipl_plot_2.7 <- t3_ipl_plot %>% 
   filter(fraction == '2.7') %>% 
   mutate(order = c(1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6))
+```
 
 ### Station 5
+```{r, message=FALSE}
+t5_ipls_1 <- final_corrected %>% filter(station == '5')## Separate stations
+t5_ipls_2 <- aggregate(total_L ~ Class + depth + fraction, data = t5_ipls_1, sum) ## totals for each class at each depth and fraction
 
-t5_ipls_1 <- final_corrected %>% filter(station == '5')
-t5_ipls_2 <- aggregate(total_L ~ Class + depth + fraction, data = t5_ipls_1, sum)
-
-total_yield_t5 <- aggregate(total_L ~ depth + fraction, data = t5_ipls_2, sum) %>% 
+total_yield_t5 <- aggregate(total_L ~ depth + fraction, data = t5_ipls_2, sum) %>% # totals for each depth by fraction
   mutate(Total = total_L) %>% 
   select(depth, fraction, Total)
 
@@ -315,18 +338,15 @@ t5_ipl_plot_0.3 <- t5_ipl_plot %>%
 t5_ipl_plot_2.7 <- t5_ipl_plot %>%
   filter(fraction == '2.7') %>% 
     mutate(order = c(1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6, 1:1:6))
-  
-cbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#999999", "#CC6666", "#9999CC", "#66CC99", "#990000")
-
 
 ```
 
-## Plot bar graphs of relative concentration and line graph of absolute concentration
+## Plot bar graphs of relative concentration
 
-### Station 3
+### Station 3, 0.3 vs 2.7 Fraction
 
 ```{r}
-
+cbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#999999", "#CC6666", "#9999CC", "#66CC99", "#990000")
 ggplot(t3_ipl_plot_0.3) +
   geom_bar(aes(y =percentage, x = order, fill = Class), stat = "identity") +
   coord_flip() +
@@ -354,7 +374,7 @@ ggplot(t3_ipl_plot_2.7) +
 ```
 
 
-### Station 5
+### Station 5, 0.3 vs 2.7 Fraction
 
 ```{r}
 ggplot(t5_ipl_plot_0.3) +
@@ -397,55 +417,67 @@ ggplot(t5_ipl_plot_2.7) +
 
 
 
+##
+    nls_safe_fit = pmap(
+      list(data = data, a = a, b = b),
+      function(data, a, b) {
+        safe_nls(Std_Area ~ a * exp(b * Std_Amount), data = data, start = list(a = a, b = b))
+      }
+    ),
+    nls_fit_error = map_chr(
+      nls_safe_fit, 
+      ~if(is.null(.x$error)) {NA_character_} else {.x$error$message}),
+    nls_fit = map(nls_safe_fit, "result"),
+    nls_summary = map(nls_fit, ~if(!is.null(.x)) { glance(.x) } else { NULL }),
+    nls_coefs = map(nls_fit, ~if(!is.null(.x)) { tidy(.x) } else { NULL })
 
 
 
 
 
 
+<!-- ## Plotting calibration curves with linear and exponential fits -->
 
-## Plotting calibration curves with linear and exponential fits
-
-##Maybe just ignore this for now:
-```{r}
-ggplot(calib_standards, aes(x = Std_Amount, y = Std_Area)) +
-  geom_point(size = 3) + 
-  geom_smooth(method = "lm",aes (colour = "Linear"), se = TRUE, size = 1) +  
-  scale_color_manual(name = "Fits",
-                     breaks = c("Linear"),
-                     values = c("blue")) +
- stat_smooth(method = "nls", formula = y ~ a*exp(b*x), start = list(a=1,b=1), ## Can't get an exponential function to plot, what values to choose for a and b?
-              aes(colour = "Exponential")) +
-    scale_color_manual(name = "Fits",
-                     breaks = c("Linear","Exponential"),
-                     values = c("red","blue")) +
-  facet_wrap(~Compound, scales = 'free')
-
-
-## Just the linear model for now
-
-ggplot(calib_standards, aes(x = Std_Amount, y = Std_Area)) +
-  geom_point(size = 3) + 
- geom_smooth(method = "lm", formula = y~x, family = gaussian(link = 'log')) +
-    scale_color_manual(name = "Fits",
-                     breaks = c("Linear","Exponential"),
-                     values = c("red","blue")) +
-  facet_wrap(~Compound, scales = 'free')
+<!-- ##Maybe just ignore this for now: -->
+<!-- ```{r} -->
+<!-- ggplot(calib_standards, aes(x = Std_Amount, y = Std_Area)) + -->
+<!--   geom_point(size = 3) +  -->
+<!--   geom_smooth(method = "lm",aes (colour = "Linear"), se = TRUE, size = 1) +   -->
+<!--   scale_color_manual(name = "Fits", -->
+<!--                      breaks = c("Linear"), -->
+<!--                      values = c("blue")) + -->
+<!--  stat_smooth(method = "nls", formula = y ~ a*exp(b*x), start = list(a=1,b=1), ## Can't get an exponential function to plot, what values to choose for a and b? -->
+<!--               aes(colour = "Exponential")) + -->
+<!--     scale_color_manual(name = "Fits", -->
+<!--                      breaks = c("Linear","Exponential"), -->
+<!--                      values = c("red","blue")) + -->
+<!--   facet_wrap(~Compound, scales = 'free') -->
 
 
-## How to extract linear regression intercept and coef to apply calibrations?
+<!-- ## Just the linear model for now -->
 
-lin_fit <- function(dat) {
-  the_fit <- lm(Std_Area ~ Std_Amount, dat)
-  setNames(data.frame(t(coef(the_fit))), c("intercept", "slope")) ## Not sure I understand why this works
-}
-
-lin_fit(calib_standards %>% filter(Compound == "ARCHAEOL")) ##Test function works on 1 compound
-
-lin_fits_df <- calib_standards %>% 
-  group_by(Compound) %>% 
-  do(lin_fit(.))
+<!-- ggplot(calib_standards, aes(x = Std_Amount, y = Std_Area)) + -->
+<!--   geom_point(size = 3) +  -->
+<!--  geom_smooth(method = "lm", formula = y~x, family = gaussian(link = 'log')) + -->
+<!--     scale_color_manual(name = "Fits", -->
+<!--                      breaks = c("Linear","Exponential"), -->
+<!--                      values = c("red","blue")) + -->
+<!--   facet_wrap(~Compound, scales = 'free') -->
 
 
+<!-- ## How to extract linear regression intercept and coef to apply calibrations? -->
 
-```
+<!-- lin_fit <- function(dat) { -->
+<!--   the_fit <- lm(Std_Area ~ Std_Amount, dat) -->
+<!--   setNames(data.frame(t(coef(the_fit))), c("intercept", "slope")) ## Not sure I understand why this works -->
+<!-- } -->
+
+<!-- lin_fit(calib_standards %>% filter(Compound == "ARCHAEOL")) ##Test function works on 1 compound -->
+
+<!-- lin_fits_df <- calib_standards %>%  -->
+<!--   group_by(Compound) %>%  -->
+<!--   do(lin_fit(.)) -->
+
+
+
+<!-- ``` -->
